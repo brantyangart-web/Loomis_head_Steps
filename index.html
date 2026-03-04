@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anatomy Step-by-Step Viewer v1.4</title>
+    <title>Anatomy Step-by-Step Viewer v1.5</title>
     <style>
-        /* Changed background to off-white and text to dark for contrast */
         body { margin: 0; background: #e5e5e5; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #333; }
         
+        /* UI Panels */
         .panel { position: absolute; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #ccc; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         #camera-panel { top: 20px; left: 20px; width: 220px; }
-        #ghost-panel { top: 20px; right: 20px; }
+        #layer-panel { top: 20px; right: 20px; width: 220px; }
         #label { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 1.4rem; font-weight: bold; pointer-events: none; color: #222; }
         
-        .control-group { margin-bottom: 15px; }
-        .control-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 5px; }
+        .control-group { margin-bottom: 12px; }
+        .control-group label { display: block; font-size: 0.75rem; color: #666; margin-bottom: 5px; font-weight: bold; }
         input[type="range"] { width: 100%; cursor: pointer; }
         
         #ui-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; background: rgba(255,255,255,0.8); padding: 15px 25px; border-radius: 50px; border: 1px solid #ccc; }
@@ -32,22 +32,30 @@
 
     <div id="camera-panel" class="panel">
         <div class="control-group">
-            <label>Lens (Focal Length / FOV)</label>
+            <label>LENS (FOV)</label>
             <input type="range" id="fov-slider" min="15" max="90" value="45">
         </div>
         <div class="control-group">
-            <label>Camera Roll (Tilt)</label>
+            <label>CAMERA ROLL</label>
             <input type="range" id="roll-slider" min="-3.14" max="3.14" step="0.01" value="0">
         </div>
-        <button id="reset-cam" style="width:100%; background:#007bff; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer;">Reset View</button>
+        <button id="reset-cam" style="width:100%; background:#007bff; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold;">RESET VIEW</button>
     </div>
 
-    <div id="ghost-panel" class="panel">
-        <input type="checkbox" id="ghost-toggle"> <label for="ghost-toggle">Ghost Previous Step</label>
+    <div id="layer-panel" class="panel">
+        <div class="control-group">
+            <label>MODEL OPACITY</label>
+            <input type="range" id="opacity-slider" min="0" max="1" step="0.01" value="1">
+        </div>
+        <hr style="border:0; border-top:1px solid #eee; margin:10px 0;">
+        <div class="control-group" style="display:flex; align-items:center; gap:10px; margin-bottom:0;">
+            <input type="checkbox" id="ghost-toggle">
+            <label style="margin-bottom:0;">GHOST PREVIOUS STEP</label>
+        </div>
     </div>
 
     <div id="ui-container"></div>
-    <div id="version-tag">v1.4</div>
+    <div id="version-tag">v1.5</div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -66,8 +74,7 @@
             { name: "Secondary Forms", url: "models/step2.glb" },
             { name: "Anatomical Details", url: "models/step3.glb" }
         ];
-        const GHOST_OPACITY = 0.2; 
-        const BACKGROUND_COLOR = 0xe5e5e5; // Off-white color
+        const BACKGROUND_COLOR = 0xe5e5e5;
         // ==========================================
 
         let scene, camera, renderer, controls, currentIdx = 0;
@@ -91,7 +98,6 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             
-            // Brightened lights for the off-white background
             scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbbb, 2.5));
             const sun = new THREE.DirectionalLight(0xffffff, 1.5);
             sun.position.set(5, 5, 5);
@@ -99,7 +105,7 @@
 
             loadModels();
             generateUI();
-            setupCameraUI();
+            setupControls();
             animate();
         }
 
@@ -108,13 +114,9 @@
                 if (child.isMesh) {
                     child.material.transparent = true;
                     child.material.opacity = opacity;
-                    if (opacity < 1.0) {
-                        child.material.depthWrite = false;
-                        child.material.side = THREE.DoubleSide; 
-                    } else {
-                        child.material.depthWrite = true;
-                        child.material.side = THREE.FrontSide;
-                    }
+                    // Fix for alpha sorting artifacts
+                    child.material.depthWrite = (opacity >= 0.95);
+                    child.material.side = THREE.DoubleSide; 
                 }
             });
         }
@@ -153,46 +155,51 @@
         function switchStep(index) {
             currentIdx = index;
             const isGhosting = document.getElementById('ghost-toggle').checked;
+            const currentOpacity = document.getElementById('opacity-slider').value;
+
             loadedModels.forEach((model, i) => {
                 if(!model) return;
+                
                 if (i === index) {
                     model.visible = true;
-                    setOpacity(model, 1.0);
+                    setOpacity(model, parseFloat(currentOpacity));
                 } else if (isGhosting && i === index - 1) {
                     model.visible = true;
-                    setOpacity(model, GHOST_OPACITY);
+                    setOpacity(model, 0.2); // Keep ghost fixed at 20%
                 } else {
                     model.visible = false;
                 }
             });
+            
             document.querySelectorAll('.step-btn').forEach((b, i) => b.classList.toggle('active', i === index));
             document.getElementById('label').innerText = `Step ${index + 1}: ${STAGES[index].name}`;
         }
 
-        function setupCameraUI() {
-            const fovSlider = document.getElementById('fov-slider');
-            const rollSlider = document.getElementById('roll-slider');
-            const resetBtn = document.getElementById('reset-cam');
-
-            fovSlider.addEventListener('input', (e) => {
+        function setupControls() {
+            // Camera Listeners
+            document.getElementById('fov-slider').addEventListener('input', (e) => {
                 camera.fov = e.target.value;
                 camera.updateProjectionMatrix();
             });
 
-            rollSlider.addEventListener('input', (e) => {
+            document.getElementById('roll-slider').addEventListener('input', (e) => {
                 const roll = parseFloat(e.target.value);
                 camera.up.set(Math.sin(roll), Math.cos(roll), 0);
             });
 
-            resetBtn.onclick = () => {
+            document.getElementById('reset-cam').onclick = () => {
                 camera.position.set(0, 0, 5);
                 camera.up.set(0, 1, 0);
                 camera.fov = 45;
                 camera.updateProjectionMatrix();
-                fovSlider.value = 45;
-                rollSlider.value = 0;
+                document.getElementById('fov-slider').value = 45;
+                document.getElementById('roll-slider').value = 0;
                 controls.reset();
             };
+
+            // Layer Listeners
+            document.getElementById('opacity-slider').addEventListener('input', () => switchStep(currentIdx));
+            document.getElementById('ghost-toggle').addEventListener('change', () => switchStep(currentIdx));
         }
 
         function animate() {

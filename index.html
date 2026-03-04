@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anatomy Viewer v2.0</title>
+    <title>Anatomy Viewer v2.1 (Stable Render)</title>
     <style>
         body { margin: 0; background: #e5e5e5; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #333; }
         .panel { position: absolute; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #ccc; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -50,7 +50,7 @@
     </div>
 
     <div id="ui-container"></div>
-    <div id="version-tag">v2.0</div>
+    <div id="version-tag">v2.1</div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -81,7 +81,7 @@
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 0, 5);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true }); // FIX 1: Better depth precision
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
@@ -109,24 +109,32 @@
                 
                 if (i === currentIdx) {
                     model.visible = true;
-                    applyOpacity(model, opacity, true);
+                    applyMaterialLogic(model, opacity, 0); // Layer 0
                 } else if (isGhosting && i === currentIdx - 1) {
                     model.visible = true;
-                    applyOpacity(model, 0.2, false);
+                    applyMaterialLogic(model, 0.2, 1); // Layer 1 (Offset back)
                 } else {
                     model.visible = false;
                 }
             });
         }
 
-        function applyOpacity(obj, opacity, isMain) {
+        function applyMaterialLogic(obj, opacity, layer) {
             obj.traverse(child => {
                 if (child.isMesh) {
-                    child.material.transparent = opacity < 1;
-                    child.material.opacity = opacity;
-                    // Stable sorting: only turn off depthWrite if very transparent
-                    child.material.depthWrite = (opacity > 0.5);
-                    child.material.side = THREE.DoubleSide;
+                    const mat = child.material;
+                    mat.transparent = true;
+                    mat.opacity = opacity;
+                    
+                    // FIX 2: Polygon Offset prevents flickering
+                    mat.polygonOffset = true;
+                    mat.polygonOffsetFactor = layer * 4; 
+                    mat.polygonOffsetUnits = layer * 4;
+                    
+                    // FIX 3: Depth Write logic for anatomical clarity
+                    mat.depthWrite = (opacity > 0.1); 
+                    mat.depthTest = true;
+                    mat.side = THREE.DoubleSide;
                 }
             });
         }
@@ -156,7 +164,6 @@
                 const btn = document.createElement('button');
                 btn.innerText = index + 1;
                 btn.className = 'step-btn';
-                btn.id = `btn-${index}`;
                 btn.onclick = () => switchStep(index);
                 container.appendChild(btn);
             });
@@ -165,24 +172,16 @@
         function switchStep(index) {
             currentIdx = index;
             setModelStates();
-            
-            // Fixed button highlighting
             document.querySelectorAll('.step-btn').forEach((btn, i) => {
-                if(i === index) btn.classList.add('active');
-                else btn.classList.remove('active');
+                btn.classList.toggle('active', i === index);
             });
-            
             document.getElementById('label').innerText = `Step ${index + 1}: ${STAGES[index].name}`;
         }
 
         function setupControls() {
             document.getElementById('opacity-slider').oninput = () => setModelStates();
             document.getElementById('ghost-toggle').onchange = () => setModelStates();
-            
-            document.getElementById('fov-slider').oninput = (e) => {
-                camera.fov = e.target.value;
-                camera.updateProjectionMatrix();
-            };
+            document.getElementById('fov-slider').oninput = (e) => { camera.fov = e.target.value; camera.updateProjectionMatrix(); };
             document.getElementById('roll-slider').oninput = (e) => {
                 const roll = parseFloat(e.target.value);
                 camera.up.set(Math.sin(roll), Math.cos(roll), 0);

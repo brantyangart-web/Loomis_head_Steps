@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anatomy Step-by-Step Viewer v1.9</title>
+    <title>Anatomy Viewer v2.0</title>
     <style>
         body { margin: 0; background: #e5e5e5; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #333; }
         .panel { position: absolute; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #ccc; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -14,7 +14,7 @@
         input[type="range"] { width: 100%; cursor: pointer; }
         #ui-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; background: rgba(255,255,255,0.8); padding: 15px 25px; border-radius: 50px; border: 1px solid #ccc; }
         .step-btn { width: 40px; height: 40px; border: none; border-radius: 50%; background: #ddd; color: #555; cursor: pointer; transition: 0.3s; font-weight: bold; }
-        .step-btn.active { background: #007bff; color: white; box-shadow: 0 0 15px rgba(0,123,255,0.5); transform: scale(1.1); }
+        .step-btn.active { background: #007bff !important; color: white !important; box-shadow: 0 0 15px rgba(0,123,255,0.5); transform: scale(1.1); }
         #version-tag { position: absolute; bottom: 10px; right: 15px; font-size: 0.7rem; color: #999; }
         #spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 4px solid rgba(0,0,0,0.1); border-top: 4px solid #007bff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; display: none; }
         @keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
@@ -50,7 +50,7 @@
     </div>
 
     <div id="ui-container"></div>
-    <div id="version-tag">v1.9</div>
+    <div id="version-tag">v2.0</div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -100,36 +100,33 @@
             animate();
         }
 
-        // --- THE DOUBLE-PASS SOLUTION ---
-        function setOpacity(obj, opacity) {
+        function setModelStates() {
+            const isGhosting = document.getElementById('ghost-toggle').checked;
+            const opacity = parseFloat(document.getElementById('opacity-slider').value);
+
+            loadedModels.forEach((model, i) => {
+                if(!model) return;
+                
+                if (i === currentIdx) {
+                    model.visible = true;
+                    applyOpacity(model, opacity, true);
+                } else if (isGhosting && i === currentIdx - 1) {
+                    model.visible = true;
+                    applyOpacity(model, 0.2, false);
+                } else {
+                    model.visible = false;
+                }
+            });
+        }
+
+        function applyOpacity(obj, opacity, isMain) {
             obj.traverse(child => {
                 if (child.isMesh) {
-                    // Create a clone for the back-pass if it doesn't exist
-                    if (!child.userData.backPass) {
-                        const backPass = child.clone();
-                        backPass.material = child.material.clone();
-                        backPass.material.side = THREE.BackSide; // Render ONLY the inside
-                        backPass.userData.isBackPass = true;
-                        child.add(backPass);
-                        child.userData.backPass = backPass;
-                    }
-
-                    const isTransparent = opacity < 0.98;
-                    
-                    // Update Front Mesh
-                    child.material.transparent = isTransparent;
+                    child.material.transparent = opacity < 1;
                     child.material.opacity = opacity;
-                    child.material.side = THREE.FrontSide;
-                    child.material.depthWrite = !isTransparent; // Crucial for sorting
-
-                    // Update Back Pass
-                    const back = child.userData.backPass;
-                    back.visible = isTransparent;
-                    if (isTransparent) {
-                        back.material.transparent = true;
-                        back.material.opacity = opacity * 0.5; // Dimmer inside for better depth
-                        back.material.depthWrite = false;
-                    }
+                    // Stable sorting: only turn off depthWrite if very transparent
+                    child.material.depthWrite = (opacity > 0.5);
+                    child.material.side = THREE.DoubleSide;
                 }
             });
         }
@@ -158,7 +155,8 @@
             STAGES.forEach((_, index) => {
                 const btn = document.createElement('button');
                 btn.innerText = index + 1;
-                btn.className = `step-btn ${index === 0 ? 'active' : ''}`;
+                btn.className = 'step-btn';
+                btn.id = `btn-${index}`;
                 btn.onclick = () => switchStep(index);
                 container.appendChild(btn);
             });
@@ -166,38 +164,42 @@
 
         function switchStep(index) {
             currentIdx = index;
-            const isGhosting = document.getElementById('ghost-toggle').checked;
-            const currentOpacity = document.getElementById('opacity-slider').value;
-
-            loadedModels.forEach((model, i) => {
-                if(!model) return;
-                if (i === index) {
-                    model.visible = true;
-                    setOpacity(model, parseFloat(currentOpacity));
-                } else if (isGhosting && i === index - 1) {
-                    model.visible = true;
-                    setOpacity(model, 0.15); 
-                } else {
-                    model.visible = false;
-                }
+            setModelStates();
+            
+            // Fixed button highlighting
+            document.querySelectorAll('.step-btn').forEach((btn, i) => {
+                if(i === index) btn.classList.add('active');
+                else btn.classList.remove('active');
             });
-            document.querySelectorAll('.step-btn').forEach((b, i) => b.classList.toggle('active', i === index));
+            
             document.getElementById('label').innerText = `Step ${index + 1}: ${STAGES[index].name}`;
         }
 
         function setupControls() {
-            document.getElementById('fov-slider').addEventListener('input', (e) => { camera.fov = e.target.value; camera.updateProjectionMatrix(); });
-            document.getElementById('roll-slider').addEventListener('input', (e) => { const roll = parseFloat(e.target.value); camera.up.set(Math.sin(roll), Math.cos(roll), 0); });
-            document.getElementById('reset-cam').onclick = () => { 
-                camera.position.set(0,0,5); camera.up.set(0,1,0); camera.fov=45; camera.updateProjectionMatrix(); 
-                document.getElementById('fov-slider').value=45; document.getElementById('roll-slider').value=0; controls.reset(); 
+            document.getElementById('opacity-slider').oninput = () => setModelStates();
+            document.getElementById('ghost-toggle').onchange = () => setModelStates();
+            
+            document.getElementById('fov-slider').oninput = (e) => {
+                camera.fov = e.target.value;
+                camera.updateProjectionMatrix();
             };
-            document.getElementById('opacity-slider').addEventListener('input', () => switchStep(currentIdx));
-            document.getElementById('ghost-toggle').addEventListener('change', () => switchStep(currentIdx));
+            document.getElementById('roll-slider').oninput = (e) => {
+                const roll = parseFloat(e.target.value);
+                camera.up.set(Math.sin(roll), Math.cos(roll), 0);
+            };
+            document.getElementById('reset-cam').onclick = () => {
+                camera.position.set(0,0,5); camera.up.set(0,1,0); camera.fov=45; camera.updateProjectionMatrix();
+                document.getElementById('fov-slider').value=45; document.getElementById('roll-slider').value=0;
+                controls.reset();
+            };
         }
 
         function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
-        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anatomy Step-by-Step Viewer v1.8</title>
+    <title>Anatomy Step-by-Step Viewer v1.9</title>
     <style>
         body { margin: 0; background: #e5e5e5; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #333; }
         .panel { position: absolute; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #ccc; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
@@ -50,7 +50,7 @@
     </div>
 
     <div id="ui-container"></div>
-    <div id="version-tag">v1.8</div>
+    <div id="version-tag">v1.9</div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -61,16 +61,12 @@
         import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
         import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 
-        // ==========================================
-        // CONFIGURATION: LOOMIS HEAD STEPS
-        // ==========================================
         const STAGES = [
             { name: "Loomis Sphere", url: "models/LoomisSphere.glb" },
             { name: "Basic Loomis Head", url: "models/LoomisHead.glb" },
             { name: "Modified Center Line", url: "models/ModifiedCenterLine.glb" },
             { name: "Bony Landmarks", url: "models/BonyLandmarks.glb" }
         ];
-        // ==========================================
 
         let scene, camera, renderer, controls, currentIdx = 0;
         const loadedModels = [];
@@ -104,22 +100,36 @@
             animate();
         }
 
+        // --- THE DOUBLE-PASS SOLUTION ---
         function setOpacity(obj, opacity) {
             obj.traverse(child => {
                 if (child.isMesh) {
-                    child.material.transparent = true;
-                    child.material.opacity = opacity;
-                    // Alpha Hashing fix from v1.7 kept for stability
-                    if (opacity < 0.98) {
-                        child.material.alphaHash = true; 
-                        child.material.depthWrite = true;
-                        child.material.side = THREE.DoubleSide; 
-                    } else {
-                        child.material.alphaHash = false;
-                        child.material.depthWrite = true;
-                        child.material.side = THREE.FrontSide;
+                    // Create a clone for the back-pass if it doesn't exist
+                    if (!child.userData.backPass) {
+                        const backPass = child.clone();
+                        backPass.material = child.material.clone();
+                        backPass.material.side = THREE.BackSide; // Render ONLY the inside
+                        backPass.userData.isBackPass = true;
+                        child.add(backPass);
+                        child.userData.backPass = backPass;
                     }
-                    child.material.needsUpdate = true;
+
+                    const isTransparent = opacity < 0.98;
+                    
+                    // Update Front Mesh
+                    child.material.transparent = isTransparent;
+                    child.material.opacity = opacity;
+                    child.material.side = THREE.FrontSide;
+                    child.material.depthWrite = !isTransparent; // Crucial for sorting
+
+                    // Update Back Pass
+                    const back = child.userData.backPass;
+                    back.visible = isTransparent;
+                    if (isTransparent) {
+                        back.material.transparent = true;
+                        back.material.opacity = opacity * 0.5; // Dimmer inside for better depth
+                        back.material.depthWrite = false;
+                    }
                 }
             });
         }
@@ -166,7 +176,7 @@
                     setOpacity(model, parseFloat(currentOpacity));
                 } else if (isGhosting && i === index - 1) {
                     model.visible = true;
-                    setOpacity(model, 0.2); 
+                    setOpacity(model, 0.15); 
                 } else {
                     model.visible = false;
                 }
@@ -179,8 +189,8 @@
             document.getElementById('fov-slider').addEventListener('input', (e) => { camera.fov = e.target.value; camera.updateProjectionMatrix(); });
             document.getElementById('roll-slider').addEventListener('input', (e) => { const roll = parseFloat(e.target.value); camera.up.set(Math.sin(roll), Math.cos(roll), 0); });
             document.getElementById('reset-cam').onclick = () => { 
-                camera.position.set(0, 0, 5); camera.up.set(0, 1, 0); camera.fov = 45; camera.updateProjectionMatrix(); 
-                document.getElementById('fov-slider').value = 45; document.getElementById('roll-slider').value = 0; controls.reset(); 
+                camera.position.set(0,0,5); camera.up.set(0,1,0); camera.fov=45; camera.updateProjectionMatrix(); 
+                document.getElementById('fov-slider').value=45; document.getElementById('roll-slider').value=0; controls.reset(); 
             };
             document.getElementById('opacity-slider').addEventListener('input', () => switchStep(currentIdx));
             document.getElementById('ghost-toggle').addEventListener('change', () => switchStep(currentIdx));

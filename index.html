@@ -2,38 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Anatomy Step-by-Step Viewer v1.2</title>
+    <title>Anatomy Step-by-Step Viewer v1.4</title>
     <style>
-        body { margin: 0; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
+        /* Changed background to off-white and text to dark for contrast */
+        body { margin: 0; background: #e5e5e5; font-family: 'Segoe UI', sans-serif; overflow: hidden; color: #333; }
         
-        /* UI Panels */
-        .panel { position: absolute; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #444; }
+        .panel { position: absolute; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; backdrop-filter: blur(8px); border: 1px solid #ccc; z-index: 10; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         #camera-panel { top: 20px; left: 20px; width: 220px; }
         #ghost-panel { top: 20px; right: 20px; }
-        #label { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 1.4rem; font-weight: bold; pointer-events: none; }
+        #label { position: absolute; top: 20px; width: 100%; text-align: center; font-size: 1.4rem; font-weight: bold; pointer-events: none; color: #222; }
         
-        /* Controls */
         .control-group { margin-bottom: 15px; }
-        .control-group label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; }
+        .control-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 5px; }
         input[type="range"] { width: 100%; cursor: pointer; }
         
-        #ui-container {
-            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 12px; background: rgba(0,0,0,0.7); padding: 15px 25px; border-radius: 50px;
-        }
-
-        .step-btn {
-            width: 40px; height: 40px; border: none; border-radius: 50%;
-            background: #333; color: #aaa; cursor: pointer; transition: 0.3s; font-weight: bold;
-        }
-        .step-btn.active { background: #007bff; color: white; box-shadow: 0 0 15px #007bff; transform: scale(1.1); }
+        #ui-container { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; background: rgba(255,255,255,0.8); padding: 15px 25px; border-radius: 50px; border: 1px solid #ccc; }
+        .step-btn { width: 40px; height: 40px; border: none; border-radius: 50%; background: #ddd; color: #555; cursor: pointer; transition: 0.3s; font-weight: bold; }
+        .step-btn.active { background: #007bff; color: white; box-shadow: 0 0 15px rgba(0,123,255,0.5); transform: scale(1.1); }
         
-        #version-tag { position: absolute; bottom: 10px; right: 15px; font-size: 0.7rem; color: #666; }
-        #spinner {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #007bff;
-            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; display: none;
-        }
+        #version-tag { position: absolute; bottom: 10px; right: 15px; font-size: 0.7rem; color: #999; }
+        #spinner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border: 4px solid rgba(0,0,0,0.1); border-top: 4px solid #007bff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; display: none; }
         @keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
     </style>
 </head>
@@ -51,7 +39,7 @@
             <label>Camera Roll (Tilt)</label>
             <input type="range" id="roll-slider" min="-3.14" max="3.14" step="0.01" value="0">
         </div>
-        <button id="reset-cam" style="width:100%; background:#444; color:white; border:none; padding:5px; border-radius:4px; cursor:pointer;">Reset View</button>
+        <button id="reset-cam" style="width:100%; background:#007bff; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer;">Reset View</button>
     </div>
 
     <div id="ghost-panel" class="panel">
@@ -59,7 +47,7 @@
     </div>
 
     <div id="ui-container"></div>
-    <div id="version-tag">v1.2</div>
+    <div id="version-tag">v1.4</div>
 
     <script type="importmap">
         { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -74,11 +62,12 @@
         // CONFIGURATION
         // ==========================================
         const STAGES = [
-            { name: "Loomis Sphere", url: "models/LoomisSphere.glb" },
-            { name: "Basic Loomis Head", url: "models/LoomisHead.glb" },
-            { name: "Modified Center Line", url: "models/ModifiedCenterLine.glb" }
+            { name: "Primary Planes", url: "models/LoomisSphere.glb" },
+            { name: "Secondary Forms", url: "models/step2.glb" },
+            { name: "Anatomical Details", url: "models/step3.glb" }
         ];
-        const GHOST_OPACITY = 0.15;
+        const GHOST_OPACITY = 0.2; 
+        const BACKGROUND_COLOR = 0xe5e5e5; // Off-white color
         // ==========================================
 
         let scene, camera, renderer, controls, currentIdx = 0;
@@ -89,7 +78,7 @@
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1a1a1a);
+            scene.background = new THREE.Color(BACKGROUND_COLOR);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 0, 5);
@@ -102,8 +91,9 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             
-            scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 3));
-            const sun = new THREE.DirectionalLight(0xffffff, 2);
+            // Brightened lights for the off-white background
+            scene.add(new THREE.HemisphereLight(0xffffff, 0xbbbbbb, 2.5));
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
             sun.position.set(5, 5, 5);
             scene.add(sun);
 
@@ -113,31 +103,20 @@
             animate();
         }
 
-        function setupCameraUI() {
-            const fovSlider = document.getElementById('fov-slider');
-            const rollSlider = document.getElementById('roll-slider');
-            const resetBtn = document.getElementById('reset-cam');
-
-            fovSlider.addEventListener('input', (e) => {
-                camera.fov = e.target.value;
-                camera.updateProjectionMatrix();
+        function setOpacity(obj, opacity) {
+            obj.traverse(child => {
+                if (child.isMesh) {
+                    child.material.transparent = true;
+                    child.material.opacity = opacity;
+                    if (opacity < 1.0) {
+                        child.material.depthWrite = false;
+                        child.material.side = THREE.DoubleSide; 
+                    } else {
+                        child.material.depthWrite = true;
+                        child.material.side = THREE.FrontSide;
+                    }
+                }
             });
-
-            rollSlider.addEventListener('input', (e) => {
-                // Adjusting the "up" vector to roll the camera
-                const roll = parseFloat(e.target.value);
-                camera.up.set(Math.sin(roll), Math.cos(roll), 0);
-            });
-
-            resetBtn.onclick = () => {
-                camera.position.set(0, 0, 5);
-                camera.up.set(0, 1, 0);
-                camera.fov = 45;
-                camera.updateProjectionMatrix();
-                fovSlider.value = 45;
-                rollSlider.value = 0;
-                controls.reset();
-            };
         }
 
         async function loadModels() {
@@ -147,7 +126,7 @@
                 return new Promise((resolve) => {
                     loader.load(stage.url, (gltf) => {
                         const model = gltf.scene;
-                        model.visible = (index === 0);
+                        model.visible = false;
                         scene.add(model);
                         loadedModels[index] = model;
                         resolve();
@@ -190,16 +169,31 @@
             document.getElementById('label').innerText = `Step ${index + 1}: ${STAGES[index].name}`;
         }
 
-        function setOpacity(obj, opacity) {
-            obj.traverse(child => {
-                if (child.isMesh) {
-                    child.material.transparent = opacity < 1;
-                    child.material.opacity = opacity;
-                }
-            });
-        }
+        function setupCameraUI() {
+            const fovSlider = document.getElementById('fov-slider');
+            const rollSlider = document.getElementById('roll-slider');
+            const resetBtn = document.getElementById('reset-cam');
 
-        document.getElementById('ghost-toggle').onchange = () => switchStep(currentIdx);
+            fovSlider.addEventListener('input', (e) => {
+                camera.fov = e.target.value;
+                camera.updateProjectionMatrix();
+            });
+
+            rollSlider.addEventListener('input', (e) => {
+                const roll = parseFloat(e.target.value);
+                camera.up.set(Math.sin(roll), Math.cos(roll), 0);
+            });
+
+            resetBtn.onclick = () => {
+                camera.position.set(0, 0, 5);
+                camera.up.set(0, 1, 0);
+                camera.fov = 45;
+                camera.updateProjectionMatrix();
+                fovSlider.value = 45;
+                rollSlider.value = 0;
+                controls.reset();
+            };
+        }
 
         function animate() {
             requestAnimationFrame(animate);
